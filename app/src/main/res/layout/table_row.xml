@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TableRow xmlns:android="http://schemas.android.com/apk/res/android"
+          android:layout_width="match_parent"
+          android:layout_height="?android:attr/listPreferredItemHeight"
+          android:focusable="true"
+          android:layout_margin="8dp">
+
+    <TextView
+        android:id="@+id/table_name"
+        android:layout_width="wrap_content"
+        android:layout_column="0"
+        android:layout_weight="0.72"
+        android:textSize="36sp"/>
+    <TextView
+        android:id="@+id/table_wins"
+        android:layout_width="wrap_content"
+        android:layout_column="1"
+        android:layout_weight="0.07"
+        android:textSize="36sp"/>
+    <TextView
+        android:id="@+id/table_losses"
+        android:layout_width="wrap_content"
+        android:layout_column="2"
+        android:layout_weight="0.07"
+        android:textSize="36sp"/>
+    <TextView
+        android:id="@+id/table_win_percentage"
+        android:layout_width="wrap_content"
+        android:layout_column="3"
+        android:layout_weight="0.07"
+        android:textSize="36sp"/>
+    <TextView
+        android:id="@+id/table_goals_for"
+        android:layout_width="wrap_content"
+        android:layout_column="3"
+        android:layout_weight="0.07"
+        android:textSize="36sp"/>
+    <TextView
+        android:id="@+id/table_goals_against"
+        android:layout_width="wrap_content"
+        android:layout_column="3"
+        android:layout_weight="0.07"
+        android:textSize="36sp"/>
+</TableRow>
