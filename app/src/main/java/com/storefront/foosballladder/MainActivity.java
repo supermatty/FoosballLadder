@@ -1,15 +1,17 @@
 package com.storefront.foosballladder;
 
+import android.annotation.SuppressLint;
 import android.content.ContentValues;
 import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.os.Environment;
-import android.support.annotation.NonNull;
+import android.preference.PreferenceManager;
+import android.support.constraint.ConstraintLayout;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
@@ -17,26 +19,35 @@ import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.NumberPicker;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.nio.channels.FileChannel;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
+
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
+    private static final boolean USE_NUMBER_PICKER = false;
+    private static final String LEAGUE_NAME = "leagueName";
+    private static final String FIREBASE_LEAGUE_ROOT_NODE = "League";
     private MatchDatabase mMatchDatabase = new MatchDatabase(this);
+    private int losingTeamScore;
+    private DatabaseReference firebaseDatabase;
+    private HashMap<Integer, Results> results;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,83 +56,140 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
+        firebaseDatabase = FirebaseDatabase.getInstance().getReference();
+
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                final HashMap<String, Integer> teams = getTeams();
-
-                final String[] teamNames = teams.keySet().toArray(new String[teams.size()]);
-
-                final AlertDialog.Builder winningTeamSelect = new AlertDialog.Builder(MainActivity.this);
-                winningTeamSelect.setTitle("Winning team")
-                        .setItems(teamNames, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialogInterface, final int winner) {
-                                dialogInterface.dismiss();
-
-                                AlertDialog.Builder losingTeamSelect = new AlertDialog.Builder(MainActivity.this);
-
-                                List result = new LinkedList();
-
-                                for (String item : teamNames) {
-                                    if (teamNames[winner] != item) {
-                                        result.add(item);
-                                    }
-                                }
-
-                                final String losers[] = new String[result.size()];
-                                result.toArray(losers);
-
-                                losingTeamSelect.setTitle("Losing team")
-                                        .setItems(losers, new DialogInterface.OnClickListener() {
-                                            @Override
-                                            public void onClick(DialogInterface dialogInterface, final int loser) {
-                                                dialogInterface.dismiss();
-                                                AlertDialog.Builder losingScoreSelect = new AlertDialog.Builder(MainActivity.this);
-                                                final NumberPicker picker = new NumberPicker(MainActivity.this);
-                                                picker.setMaxValue(9);
-                                                picker.setMinValue(0);
-                                                picker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
-                                                losingScoreSelect.setTitle("Losing team score")
-                                                        .setView(picker)
-                                                        .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                                                            @Override
-                                                            public void onClick(DialogInterface dialogInterface, final int score) {
-                                                                SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
-
-                                                                ContentValues insert = new ContentValues();
-                                                                insert.put(DatabaseContract.MatchResult.COLUMN_NAME_WINNER_ID, teams.get(teamNames[winner]));
-                                                                insert.put(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_ID, teams.get(losers[loser]));
-                                                                insert.put(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_SCORE, picker.getValue());
-
-                                                                db.insert(DatabaseContract.MatchResult.TABLE_NAME, null, insert);
-                                                                db.close();
-
-                                                                populateTable();
-                                                            }
-                                                        })
-                                                        .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
-                                                            @Override
-                                                            public void onClick(DialogInterface dialogInterface, int i) { }
-                                                        }).create().show();
-
-                                            }
-                                        })
-                                        .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
-                                            @Override
-                                            public void onClick(DialogInterface dialogInterface, int i) { }
-                                        }).create().show();
-                            }
-                        })
-                        .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialogInterface, int i) { }
-                        }).create().show();
+                addGameScore();
             }
         });
 
-        populateTable();
+        setupFirebase();
+        populateTableFromDatabase();
+    }
+
+    private void addGameScore() {
+        final HashMap<String, Integer> teams = getTeams();
+
+        final String[] teamNames = teams.keySet().toArray(new String[teams.size()]);
+
+        final AlertDialog.Builder winningTeamSelect = new AlertDialog.Builder(MainActivity.this);
+        winningTeamSelect.setTitle("Winning team")
+                .setItems(teamNames, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, final int winner) {
+                        dialogInterface.dismiss();
+
+                        pickLosingTeam(teamNames[winner], teamNames, teams);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                    }
+                }).create().show();
+    }
+
+    private void pickLosingTeam(final String winningTeamName, String[] teamNames, final HashMap<String, Integer> teams) {
+        AlertDialog.Builder losingTeamSelect = new AlertDialog.Builder(MainActivity.this);
+
+        List<String> result = new ArrayList<>();
+
+        for (String item : teamNames) {
+            if (!winningTeamName.equals(item)) {
+                result.add(item);
+            }
+        }
+
+        final String losers[] = new String[result.size()];
+        result.toArray(losers);
+
+        losingTeamSelect.setTitle("Losing team")
+                .setItems(losers, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, final int loser) {
+                        dialogInterface.dismiss();
+                        pickLosingAmount(teams.get(losers[loser]), teams.get(winningTeamName));
+
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                    }
+                }).create().show();
+    }
+
+    private void pickLosingAmount(final Integer loadingTeamId, final Integer winningTeamId) {
+        AlertDialog.Builder losingScoreSelect = new AlertDialog.Builder(MainActivity.this);
+
+        View picker;
+
+        if (USE_NUMBER_PICKER) {
+
+            NumberPicker numberPicker = new NumberPicker(MainActivity.this);
+            numberPicker.setMaxValue(9);
+            numberPicker.setMinValue(0);
+            numberPicker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+            numberPicker.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+
+                @Override
+                public void onValueChange(NumberPicker numberPicker, int oldValue, int newValue) {
+                    losingTeamScore = newValue;
+                }
+            });
+            picker = numberPicker;
+        } else {
+            picker = getLayoutInflater().inflate(R.layout.number_picker, null);
+            final ImageButton[] buttons = new ImageButton[10];
+            for (int i = 0; i < 10; i++) {
+                buttons[i] = (ImageButton) picker.findViewById(getResources().getIdentifier("button_number_" + i, "id", getPackageName()));
+                buttons[i].setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        // Clear all buttons tint...
+                        for (int j = 0; j < 10; j++) {
+                            buttons[j].setColorFilter(null);
+                        }
+
+                        losingTeamScore = Integer.parseInt(view.getTag().toString());
+                        // Set tint on selected button
+                        ((ImageButton) view).setColorFilter(Color.argb(155, 155, 155, 155));
+                    }
+                });
+            }
+        }
+
+
+        losingScoreSelect.setTitle("Losing team score")
+                .setView(picker)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, final int score) {
+                        addScoreToDatabase(winningTeamId, loadingTeamId, losingTeamScore);
+
+                        populateTableFromDatabase();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                    }
+                }).create().show();
+    }
+
+    private void addScoreToDatabase(Integer winningTeamId, Integer loadingTeamId, int loserScore) {
+        SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
+
+        ContentValues insert = new ContentValues();
+        insert.put(DatabaseContract.MatchResult.COLUMN_NAME_WINNER_ID, winningTeamId);
+        insert.put(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_ID, loadingTeamId);
+        insert.put(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_SCORE, loserScore);
+
+        db.insert(DatabaseContract.MatchResult.TABLE_NAME, null, insert);
+        db.close();
     }
 
     @Override
@@ -150,54 +218,124 @@ public class MainActivity extends AppCompatActivity {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             final EditText editText = new EditText(this);
             builder.setTitle("Enter team name").setView(editText)
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
-                        Calendar calendar = Calendar.getInstance();
+                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
+                            Calendar calendar = Calendar.getInstance();
 
-                        ContentValues insert = new ContentValues();
-                        insert.put(DatabaseContract.Team.COLUMN_NAME_NAME, editText.getText().toString());
-                        insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH, calendar.get(Calendar.MONTH));
-                        insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR, calendar.get(Calendar.YEAR));
+                            ContentValues insert = new ContentValues();
+                            insert.put(DatabaseContract.Team.COLUMN_NAME_NAME, editText.getText().toString());
+                            insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH, calendar.get(Calendar.MONTH));
+                            insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR, calendar.get(Calendar.YEAR));
 
-                        db.insert(DatabaseContract.Team.TABLE_NAME, null, insert);
+                            db.insert(DatabaseContract.Team.TABLE_NAME, null, insert);
 
-                        populateTable();
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) { }
-                }).create().show();
+                            populateTableFromDatabase();
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                        }
+                    }).create().show();
             return true;
         }
 
         return super.onOptionsItemSelected(item);
     }
 
-    private void populateTable() {
+    private void setupFirebase() {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        String league = preferences.getString(LEAGUE_NAME, null);
+        if (league == null) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Do you wish to syncronize your League with the Cloud?")
+                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            importIntoFireBaseStep1();
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .create()
+                    .show();
+
+        } else {
+            DatabaseReference leagueNode = firebaseDatabase.child("League").child(league);
+            if (leagueNode != null) {
+                populateTableFromFirebase(leagueNode);
+            }
+        }
+    }
+
+    private void importIntoFireBaseStep1() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        final EditText editText = new EditText(this);
+        builder.setTitle("Enter League Name?").setView(editText)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        importIntoFirebaseStep2(editText.getText().toString());
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create()
+                .show();
+    }
+
+    private void importIntoFirebaseStep2(final String leagueName) {
+
+        firebaseDatabase.child(FIREBASE_LEAGUE_ROOT_NODE).addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                for(DataSnapshot data: dataSnapshot.getChildren()){
+                    if (data.child(leagueName).exists()) {
+                        //do ur stuff
+                    } else {
+                        //do something
+                    }
+                }
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
+
+    }
+
+
+    private void populateTableFromFirebase(DatabaseReference leagueNode) {
+
+    }
+
+    @SuppressLint("UseSparseArrays")
+    private void populateTableFromDatabase() {
         String teamsQuery = "SELECT * FROM " + DatabaseContract.Team.TABLE_NAME + " " +
                 "WHERE " + DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH + " = ? AND " +
                 DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR + " = ?";
 
         Calendar calendar = Calendar.getInstance();
-        String[] selectionArgs = { String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR)) };
+        String[] selectionArgs = {String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR))};
 
         SQLiteDatabase db = mMatchDatabase.getReadableDatabase();
         Cursor cursor = db.rawQuery(teamsQuery, selectionArgs);
 
-        HashMap<Integer, Results> results = new HashMap<>();
+        results = new HashMap<>();
         while (cursor.moveToNext()) {
             String teamName = cursor.getString(cursor.getColumnIndex(DatabaseContract.Team.COLUMN_NAME_NAME));
             if (teamName != null) {
                 Results teamResults = new Results();
-                teamResults.Name = teamName;
+                teamResults.setName(teamName);
                 results.put(cursor.getInt(cursor.getColumnIndex(DatabaseContract.Team._ID)), teamResults);
             }
         }
 
-        if (results.size() == 0) return;
+        if (results.size() == 0) {
+            return;
+        }
 
         String idArgs = "(" + TextUtils.join(",", results.keySet().toArray()) + ")";
 
@@ -212,17 +350,23 @@ public class MainActivity extends AppCompatActivity {
             int loserId = cursor.getInt(cursor.getColumnIndex(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_ID));
             int loserGoals = cursor.getInt(cursor.getColumnIndex(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_SCORE));
 
-            results.get(winnerId).Wins++;
-            results.get(winnerId).GoalsFor += 10;
-            results.get(winnerId).GoalsAgainst += loserGoals;
-            results.get(loserId).Losses++;
-            results.get(loserId).GoalsFor += loserGoals;
-            results.get(loserId).GoalsAgainst += 10;
+            results.get(winnerId).setWins( results.get(winnerId).getWins() +1);
+            results.get(winnerId).setGoalsFor(results.get(winnerId).getGoalsFor() + 10);
+            results.get(winnerId).setGoalsAgainst(results.get(winnerId).getGoalsAgainst() + loserGoals);
+            results.get(loserId).setLosses(results.get(loserId).getLosses() +1);
+            results.get(loserId).setGoalsFor(results.get(loserId).getGoalsFor() + loserGoals);
+            results.get(loserId).setGoalsAgainst(results.get(loserId).getGoalsAgainst() + 10);
         }
 
         cursor.close();
         db.close();
 
+        populateTable(results);
+
+    }
+
+    private void populateTable(HashMap<Integer, Results> results) {
+        ConstraintLayout layout = (ConstraintLayout) findViewById(R.id.constraint_layout);
         TableLayout table = (TableLayout) findViewById(R.id.table);
 
         table.removeAllViews();
@@ -230,13 +374,13 @@ public class MainActivity extends AppCompatActivity {
         List<Results> sorted = new ArrayList<>(results.values());
         Collections.sort(sorted);
 
-        final TableRow headers = (TableRow) getLayoutInflater().inflate(R.layout.table_row, null);
-        ((TextView) headers.findViewById(R.id.table_name)).setText("Name");
-        ((TextView) headers.findViewById(R.id.table_wins)).setText("Wins");
-        ((TextView) headers.findViewById(R.id.table_losses)).setText("Losses");
-        ((TextView) headers.findViewById(R.id.table_win_percentage)).setText("%");
-        ((TextView) headers.findViewById(R.id.table_goals_for)).setText("GF");
-        ((TextView) headers.findViewById(R.id.table_goals_against)).setText("GA");
+        final TableRow headers = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
+        ((TextView) headers.findViewById(R.id.table_name)).setText(R.string.header_name);
+        ((TextView) headers.findViewById(R.id.table_wins)).setText(R.string.header_wins);
+        ((TextView) headers.findViewById(R.id.table_losses)).setText(R.string.header_losses);
+        ((TextView) headers.findViewById(R.id.table_win_percentage)).setText(R.string.header_win_percent);
+        ((TextView) headers.findViewById(R.id.table_goals_for)).setText(R.string.header_goals_for);
+        ((TextView) headers.findViewById(R.id.table_goals_against)).setText(R.string.header_goals_against);
         ((TextView) headers.findViewById(R.id.table_name)).setTypeface(null, Typeface.BOLD);
         ((TextView) headers.findViewById(R.id.table_wins)).setTypeface(null, Typeface.BOLD);
         ((TextView) headers.findViewById(R.id.table_losses)).setTypeface(null, Typeface.BOLD);
@@ -246,16 +390,17 @@ public class MainActivity extends AppCompatActivity {
         table.addView(headers);
 
         for (Results result : sorted) {
-            final TableRow row = (TableRow) getLayoutInflater().inflate(R.layout.table_row, null);
-            ((TextView) row.findViewById(R.id.table_name)).setText(result.Name);
-            ((TextView) row.findViewById(R.id.table_wins)).setText(String.valueOf(result.Wins));
-            ((TextView) row.findViewById(R.id.table_losses)).setText(String.valueOf(result.Losses));
-            ((TextView) row.findViewById(R.id.table_win_percentage)).setText(String.format("%.3f", result.getWinPercentage()));
-            ((TextView) row.findViewById(R.id.table_goals_for)).setText(String.valueOf(result.GoalsFor));
-            ((TextView) row.findViewById(R.id.table_goals_against)).setText(String.valueOf(result.GoalsAgainst));
+            final TableRow row = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
+            ((TextView) row.findViewById(R.id.table_name)).setText(result.getName());
+            ((TextView) row.findViewById(R.id.table_wins)).setText(String.valueOf(result.getWins()));
+            ((TextView) row.findViewById(R.id.table_losses)).setText(String.valueOf(result.getLosses()));
+            ((TextView) row.findViewById(R.id.table_win_percentage)).setText(String.format(Locale.getDefault(), "%.3f", result.getWinPercentage()));
+            ((TextView) row.findViewById(R.id.table_goals_for)).setText(String.valueOf(result.getGoalsFor()));
+            ((TextView) row.findViewById(R.id.table_goals_against)).setText(String.valueOf(result.getGoalsAgainst()));
             table.addView(row);
         }
     }
+
 
     private HashMap<String, Integer> getTeams() {
         String teamsQuery = "SELECT " + DatabaseContract.Team.COLUMN_NAME_NAME + ", " + DatabaseContract.Team._ID + " FROM " + DatabaseContract.Team.TABLE_NAME + " " +
@@ -263,7 +408,7 @@ public class MainActivity extends AppCompatActivity {
                 DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR + " = ?";
 
         Calendar calendar = Calendar.getInstance();
-        String[] selectionArgs = { String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR)) };
+        String[] selectionArgs = {String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR))};
 
         SQLiteDatabase db = mMatchDatabase.getReadableDatabase();
         Cursor cursor = db.rawQuery(teamsQuery, selectionArgs);
@@ -280,28 +425,4 @@ public class MainActivity extends AppCompatActivity {
         return teams;
     }
 
-    private class Results implements Comparable<Results> {
-        public String Name;
-        public int Wins = 0;
-        public int Losses = 0;
-        public int GoalsFor = 0;
-        public int GoalsAgainst = 0;
-
-        public double getWinPercentage() {
-            return Wins + Losses == 0 ? 0.5 : (double)Wins / (Wins + Losses);
-        }
-
-        @Override
-        public int compareTo(@NonNull Results results) {
-            if (Double.compare(results.getWinPercentage(), this.getWinPercentage()) == 0) {
-                if (Integer.compare(results.GoalsFor, this.GoalsFor) == 0) {
-                    return Integer.compare(this.GoalsAgainst, results.GoalsAgainst);
-                }
-
-                return Integer.compare(results.GoalsFor, this.GoalsFor);
-            }
-
-            return Double.compare(results.getWinPercentage(), this.getWinPercentage());
-        }
-    }
 }

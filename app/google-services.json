@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "644385782614",
+    "firebase_url": "https://storefront-ladder.firebaseio.com",
+    "project_id": "storefront-ladder",
+    "storage_bucket": "storefront-ladder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:644385782614:android:5d37dd9b91e7e936",
+        "android_client_info": {
+          "package_name": "com.storefront.foosballladder"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "644385782614-hce3sp1usknprj8g82apng6h2jfq7876.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.storefront.foosballladder",
+            "certificate_hash": "7ae30d22dfb69dce069d79930589d1612af248e5"
+          }
+        },
+        {
+          "client_id": "644385782614-591gv596vip2ltm9uq3fjckirvia79v8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB12lklmJl0959o02hhscC8KDQw5wwfCvQ"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 2,
+          "other_platform_oauth_client": [
+            {
+              "client_id": "644385782614-591gv596vip2ltm9uq3fjckirvia79v8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

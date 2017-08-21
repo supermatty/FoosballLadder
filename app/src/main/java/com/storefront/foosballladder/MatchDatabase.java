@@ -4,7 +4,7 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
-public class MatchDatabase extends SQLiteOpenHelper {
+class MatchDatabase extends SQLiteOpenHelper {
     MatchDatabase(Context context) {
         super(context, "MatchDatabase", null, 1);
     }
@@ -16,7 +16,7 @@ public class MatchDatabase extends SQLiteOpenHelper {
     }
 
     @Override
-    public void onUpgrade(SQLiteDatabase sqLiteDatabase, int i, int i1) {
+    public void onUpgrade(SQLiteDatabase sqLiteDatabase, int oldVersion, int newVersion) {
 
     }
 }
