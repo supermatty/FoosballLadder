@@ -1,20 +1,24 @@
-package com.storefront.foosballladder;
+package com.storefront.foosballladder.models;
 
 import android.support.annotation.NonNull;
 
-class Results implements Comparable<Results> {
+public class TeamResults implements Comparable<TeamResults> {
     private String name;
     private int wins = 0;
     private int losses = 0;
     private int goalsFor = 0;
     private int goalsAgainst = 0;
 
-    double getWinPercentage() {
+    public TeamResults(String teamName) {
+        name = teamName;
+    }
+
+    public double getWinPercentage() {
         return wins + losses == 0 ? 0.5 : (double) wins / (wins + losses);
     }
 
     @Override
-    public int compareTo(@NonNull Results results) {
+    public int compareTo(@NonNull TeamResults results) {
         if (Double.compare(results.getWinPercentage(), this.getWinPercentage()) == 0) {
             if (Integer.compare(results.getGoalsFor(), this.getGoalsFor()) == 0) {
                 return Integer.compare(this.getGoalsAgainst(), results.getGoalsAgainst());
@@ -30,39 +34,35 @@ class Results implements Comparable<Results> {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    int getWins() {
+    public int getWins() {
         return wins;
     }
 
-    void setWins(int wins) {
-        this.wins = wins;
+    public void addWin() {
+        this.wins = +1;
     }
 
-    int getLosses() {
+    public int getLosses() {
         return losses;
     }
 
-    void setLosses(int losses) {
-        this.losses = losses;
+    public void addLoss() {
+        this.losses += 1;
     }
 
-    int getGoalsFor() {
+    public int getGoalsFor() {
         return goalsFor;
     }
 
-    void setGoalsFor(int goalsFor) {
-        this.goalsFor = goalsFor;
+    public void addGoalsFor(int addGoals) {
+        this.goalsFor += addGoals;
     }
 
-    int getGoalsAgainst() {
+    public int getGoalsAgainst() {
         return goalsAgainst;
     }
 
-    void setGoalsAgainst(int goalsAgainst) {
-        this.goalsAgainst = goalsAgainst;
+    public void addGoalsAgainst(int addGoalsAgainst) {
+        this.goalsAgainst += addGoalsAgainst;
     }
 }

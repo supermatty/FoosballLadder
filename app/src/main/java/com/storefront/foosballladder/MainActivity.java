@@ -16,6 +16,7 @@ import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -31,6 +32,7 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.storefront.foosballladder.models.TeamResults;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -40,13 +42,16 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = MainActivity.class.getSimpleName();
+
     private static final boolean USE_NUMBER_PICKER = false;
     private static final String LEAGUE_NAME = "leagueName";
     private static final String FIREBASE_LEAGUE_ROOT_NODE = "League";
+
     private MatchDatabase mMatchDatabase = new MatchDatabase(this);
-    private int losingTeamScore;
+    private String leagueName;
     private DatabaseReference firebaseDatabase;
-    private HashMap<Integer, Results> results;
+    private HashMap<Integer, TeamResults> results;
 
 
     @Override
@@ -126,6 +131,10 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog.Builder losingScoreSelect = new AlertDialog.Builder(MainActivity.this);
 
         View picker;
+        class LosingTeamScore {
+            int score;
+        }
+        final LosingTeamScore losingTeamScore = new LosingTeamScore();
 
         if (USE_NUMBER_PICKER) {
 
@@ -137,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onValueChange(NumberPicker numberPicker, int oldValue, int newValue) {
-                    losingTeamScore = newValue;
+                    losingTeamScore.score = newValue;
                 }
             });
             picker = numberPicker;
@@ -154,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
                             buttons[j].setColorFilter(null);
                         }
 
-                        losingTeamScore = Integer.parseInt(view.getTag().toString());
+                        losingTeamScore.score = Integer.parseInt(view.getTag().toString());
                         // Set tint on selected button
                         ((ImageButton) view).setColorFilter(Color.argb(155, 155, 155, 155));
                     }
@@ -168,7 +177,7 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialogInterface, final int score) {
-                        addScoreToDatabase(winningTeamId, loadingTeamId, losingTeamScore);
+                        addScoreToDatabase(winningTeamId, loadingTeamId, losingTeamScore.score);
 
                         populateTableFromDatabase();
                     }
@@ -258,7 +267,6 @@ public class MainActivity extends AppCompatActivity {
                         }
                     })
                     .setNegativeButton(android.R.string.cancel, null)
-                    .create()
                     .show();
 
         } else {
@@ -280,27 +288,37 @@ public class MainActivity extends AppCompatActivity {
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .create()
                 .show();
     }
 
     private void importIntoFirebaseStep2(final String leagueName) {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString(LEAGUE_NAME, leagueName);
+        this.leagueName = leagueName;
 
-        firebaseDatabase.child(FIREBASE_LEAGUE_ROOT_NODE).addValueEventListener(new ValueEventListener() {
+    }
+
+
+    private void loadOrImportFirebase() {
+        final DatabaseReference leagueNode = firebaseDatabase.child(FIREBASE_LEAGUE_ROOT_NODE);
+        leagueNode.addListenerForSingleValueEvent(new ValueEventListener() {
+
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                for(DataSnapshot data: dataSnapshot.getChildren()){
-                    if (data.child(leagueName).exists()) {
-                        //do ur stuff
-                    } else {
-                        //do something
-                    }
+                HashMap<Integer, HashMap<Integer, TeamResults[]>> leagueData;
+                if (!dataSnapshot.child(leagueName).exists()) {
+                    leagueData = new HashMap<>();
+                    leagueNode.setValue(leagueName, leagueData);
+                } else {
+                    leagueData = (HashMap<Integer, HashMap<Integer, TeamResults[]>>)dataSnapshot.child(leagueName).getValue();
                 }
+
             }
 
             @Override
             public void onCancelled(DatabaseError databaseError) {
-
+                Log.d(TAG,"On Cancelled Calling "+databaseError.getDetails() +"\n\n" +databaseError.getMessage()+"\n\n" +databaseError.toString());
             }
         });
 
@@ -327,8 +345,7 @@ public class MainActivity extends AppCompatActivity {
         while (cursor.moveToNext()) {
             String teamName = cursor.getString(cursor.getColumnIndex(DatabaseContract.Team.COLUMN_NAME_NAME));
             if (teamName != null) {
-                Results teamResults = new Results();
-                teamResults.setName(teamName);
+                TeamResults teamResults = new TeamResults(teamName);
                 results.put(cursor.getInt(cursor.getColumnIndex(DatabaseContract.Team._ID)), teamResults);
             }
         }
@@ -350,12 +367,12 @@ public class MainActivity extends AppCompatActivity {
             int loserId = cursor.getInt(cursor.getColumnIndex(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_ID));
             int loserGoals = cursor.getInt(cursor.getColumnIndex(DatabaseContract.MatchResult.COLUMN_NAME_LOSER_SCORE));
 
-            results.get(winnerId).setWins( results.get(winnerId).getWins() +1);
-            results.get(winnerId).setGoalsFor(results.get(winnerId).getGoalsFor() + 10);
-            results.get(winnerId).setGoalsAgainst(results.get(winnerId).getGoalsAgainst() + loserGoals);
-            results.get(loserId).setLosses(results.get(loserId).getLosses() +1);
-            results.get(loserId).setGoalsFor(results.get(loserId).getGoalsFor() + loserGoals);
-            results.get(loserId).setGoalsAgainst(results.get(loserId).getGoalsAgainst() + 10);
+            results.get(winnerId).addWin();
+            results.get(winnerId).addGoalsFor(10);
+            results.get(winnerId).addGoalsAgainst(loserGoals);
+            results.get(loserId).addLoss();
+            results.get(loserId).addGoalsFor(loserGoals);
+            results.get(loserId).addGoalsAgainst(10);
         }
 
         cursor.close();
@@ -365,13 +382,13 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void populateTable(HashMap<Integer, Results> results) {
+    private void populateTable(HashMap<Integer, TeamResults> results) {
         ConstraintLayout layout = (ConstraintLayout) findViewById(R.id.constraint_layout);
         TableLayout table = (TableLayout) findViewById(R.id.table);
 
         table.removeAllViews();
 
-        List<Results> sorted = new ArrayList<>(results.values());
+        List<TeamResults> sorted = new ArrayList<>(results.values());
         Collections.sort(sorted);
 
         final TableRow headers = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
@@ -389,7 +406,7 @@ public class MainActivity extends AppCompatActivity {
         ((TextView) headers.findViewById(R.id.table_goals_against)).setTypeface(null, Typeface.BOLD);
         table.addView(headers);
 
-        for (Results result : sorted) {
+        for (TeamResults result : sorted) {
             final TableRow row = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
             ((TextView) row.findViewById(R.id.table_name)).setText(result.getName());
             ((TextView) row.findViewById(R.id.table_wins)).setText(String.valueOf(result.getWins()));
