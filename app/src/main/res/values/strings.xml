@@ -1,4 +1,10 @@
 <resources>
     <string name="app_name">Foosball Ladder</string>
     <string name="action_settings">Settings</string>
+    <string name="header_name">Name</string>
+    <string name="header_wins">Wins</string>
+    <string name="header_losses">Losses</string>
+    <string name="header_goals_for">GF</string>
+    <string name="header_goals_against">GA</string>
+    <string name="header_win_percent">%</string>
 </resources>
