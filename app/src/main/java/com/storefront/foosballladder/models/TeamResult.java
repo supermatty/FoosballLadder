@@ -2,15 +2,21 @@ package com.storefront.foosballladder.models;
 
 import android.support.annotation.NonNull;
 
-public class TeamResults implements Comparable<TeamResults> {
+public class TeamResult implements Comparable<TeamResult> {
     private String name;
+    private int id;
     private int wins = 0;
     private int losses = 0;
     private int goalsFor = 0;
     private int goalsAgainst = 0;
 
-    public TeamResults(String teamName) {
+    public TeamResult(String teamName, int id) {
         name = teamName;
+        this.id = id;
+    }
+
+    public TeamResult() {
+
     }
 
     public double getWinPercentage() {
@@ -18,7 +24,7 @@ public class TeamResults implements Comparable<TeamResults> {
     }
 
     @Override
-    public int compareTo(@NonNull TeamResults results) {
+    public int compareTo(@NonNull TeamResult results) {
         if (Double.compare(results.getWinPercentage(), this.getWinPercentage()) == 0) {
             if (Integer.compare(results.getGoalsFor(), this.getGoalsFor()) == 0) {
                 return Integer.compare(this.getGoalsAgainst(), results.getGoalsAgainst());
@@ -34,12 +40,16 @@ public class TeamResults implements Comparable<TeamResults> {
         return name;
     }
 
+    public int getId() {
+        return id;
+    }
+
     public int getWins() {
         return wins;
     }
 
     public void addWin() {
-        this.wins = +1;
+        this.wins += 1;
     }
 
     public int getLosses() {

@@ -32,7 +32,8 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
-import com.storefront.foosballladder.models.TeamResults;
+import com.storefront.foosballladder.models.TeamResult;
+import com.storefront.foosballladder.models.TeamResultCollection;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
+@SuppressLint("UseSparseArrays")
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = MainActivity.class.getSimpleName();
 
@@ -51,7 +53,8 @@ public class MainActivity extends AppCompatActivity {
     private MatchDatabase mMatchDatabase = new MatchDatabase(this);
     private String leagueName;
     private DatabaseReference firebaseDatabase;
-    private HashMap<Integer, TeamResults> results;
+    private HashMap<Integer, TeamResult> results;
+    private boolean useFireBaseForStorage;
 
 
     @Override
@@ -72,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         setupFirebase();
-        populateTableFromDatabase();
+
     }
 
     private void addGameScore() {
@@ -127,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
                 }).create().show();
     }
 
-    private void pickLosingAmount(final Integer loadingTeamId, final Integer winningTeamId) {
+    private void pickLosingAmount(final Integer loosingTeamId, final Integer winningTeamId) {
         AlertDialog.Builder losingScoreSelect = new AlertDialog.Builder(MainActivity.this);
 
         View picker;
@@ -177,9 +180,24 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialogInterface, final int score) {
-                        addScoreToDatabase(winningTeamId, loadingTeamId, losingTeamScore.score);
+                        if (useFireBaseForStorage) {
+                            TeamResult winningTeamResults = results.get(winningTeamId);
+                            winningTeamResults.addGoalsFor(10);
+                            winningTeamResults.addGoalsAgainst(losingTeamScore.score);
+                            winningTeamResults.addWin();
 
-                        populateTableFromDatabase();
+                            TeamResult loosingTeamResults = results.get(loosingTeamId);
+                            loosingTeamResults.addGoalsAgainst(10);
+                            loosingTeamResults.addGoalsFor(losingTeamScore.score);
+                            loosingTeamResults.addLoss();
+
+                            updateFirebase();
+
+                        } else {
+                            addScoreToDatabase(winningTeamId, loosingTeamId, losingTeamScore.score);
+                            populateTableFromDatabase();
+                        }
+                        populateTable();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
@@ -187,6 +205,11 @@ public class MainActivity extends AppCompatActivity {
                     public void onClick(DialogInterface dialogInterface, int i) {
                     }
                 }).create().show();
+    }
+
+    private void updateFirebase() {
+        final DatabaseReference leagueNode = firebaseDatabase.child(FIREBASE_LEAGUE_ROOT_NODE);
+        leagueNode.child(leagueName).child(getYearString()).child(getMonthString()).setValue(new ArrayList<>(results.values()));
     }
 
     private void addScoreToDatabase(Integer winningTeamId, Integer loadingTeamId, int loserScore) {
@@ -230,17 +253,37 @@ public class MainActivity extends AppCompatActivity {
                     .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialogInterface, int i) {
-                            SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
-                            Calendar calendar = Calendar.getInstance();
 
-                            ContentValues insert = new ContentValues();
-                            insert.put(DatabaseContract.Team.COLUMN_NAME_NAME, editText.getText().toString());
-                            insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH, calendar.get(Calendar.MONTH));
-                            insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR, calendar.get(Calendar.YEAR));
+                            if (useFireBaseForStorage) {
+                                int currentId = 0;
+                                for (TeamResult teamResults : results.values()) {
 
-                            db.insert(DatabaseContract.Team.TABLE_NAME, null, insert);
+                                    if (teamResults.getId() > currentId) {
+                                        currentId = teamResults.getId();
+                                    }
+                                }
 
-                            populateTableFromDatabase();
+                                Integer nextTeamId = currentId + 1;
+                                results.put(nextTeamId, new TeamResult(editText.getText().toString(), nextTeamId));
+
+                                updateFirebase();
+
+
+                            } else {
+
+                                SQLiteDatabase db = mMatchDatabase.getWritableDatabase();
+                                Calendar calendar = Calendar.getInstance();
+
+                                ContentValues insert = new ContentValues();
+                                insert.put(DatabaseContract.Team.COLUMN_NAME_NAME, editText.getText().toString());
+                                insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH, calendar.get(Calendar.MONTH));
+                                insert.put(DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR, calendar.get(Calendar.YEAR));
+
+                                db.insert(DatabaseContract.Team.TABLE_NAME, null, insert);
+
+                                populateTableFromDatabase();
+                            }
+                            populateTable();
                         }
                     })
                     .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
@@ -256,8 +299,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupFirebase() {
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-        String league = preferences.getString(LEAGUE_NAME, null);
-        if (league == null) {
+        leagueName = preferences.getString(LEAGUE_NAME, null);
+        if (leagueName == null) {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Do you wish to syncronize your League with the Cloud?")
                     .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -266,15 +309,23 @@ public class MainActivity extends AppCompatActivity {
                             importIntoFireBaseStep1();
                         }
                     })
-                    .setNegativeButton(android.R.string.cancel, null)
+                    .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            useLocalDatabase();
+                        }
+                    })
                     .show();
 
         } else {
-            DatabaseReference leagueNode = firebaseDatabase.child("League").child(league);
-            if (leagueNode != null) {
-                populateTableFromFirebase(leagueNode);
-            }
+            loadOrImportFirebase();
         }
+    }
+
+    private void useLocalDatabase() {
+        useFireBaseForStorage = false;
+        populateTableFromDatabase();
+        populateTable();
     }
 
     private void importIntoFireBaseStep1() {
@@ -287,7 +338,12 @@ public class MainActivity extends AppCompatActivity {
                         importIntoFirebaseStep2(editText.getText().toString());
                     }
                 })
-                .setNegativeButton(android.R.string.cancel, null)
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        useLocalDatabase();
+                    }
+                })
                 .show();
     }
 
@@ -295,8 +351,9 @@ public class MainActivity extends AppCompatActivity {
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         SharedPreferences.Editor editor = preferences.edit();
         editor.putString(LEAGUE_NAME, leagueName);
+        editor.apply();
         this.leagueName = leagueName;
-
+        loadOrImportFirebase();
     }
 
 
@@ -306,13 +363,26 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                HashMap<Integer, HashMap<Integer, TeamResults[]>> leagueData;
-                if (!dataSnapshot.child(leagueName).exists()) {
-                    leagueData = new HashMap<>();
-                    leagueNode.setValue(leagueName, leagueData);
-                } else {
-                    leagueData = (HashMap<Integer, HashMap<Integer, TeamResults[]>>)dataSnapshot.child(leagueName).getValue();
+                DataSnapshot leagueSnapshot = dataSnapshot.child(leagueName);
+                if (leagueSnapshot.exists()) {
+                    DataSnapshot yearSnapshot = leagueSnapshot.child(getYearString());
+                    if (yearSnapshot.exists())  {
+                        results = new HashMap<>();
+                        if (yearSnapshot.child(getMonthString()).exists()) {
+                            TeamResultCollection teamResults = yearSnapshot.child(getMonthString()).getValue(TeamResultCollection.class);
+                            for (TeamResult teamResult : teamResults) {
+                                results.put(teamResult.getId(), teamResult);
+                            }
+                        }
+                        populateTable();
+                        return;
+                    }
+
                 }
+
+                populateTableFromDatabase();
+                importIntoFirebaseFromDatabase(leagueNode);
+
 
             }
 
@@ -325,18 +395,34 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private void populateTableFromFirebase(DatabaseReference leagueNode) {
+
+
+    private void importIntoFirebaseFromDatabase(DatabaseReference leagueNode) {
+        useFireBaseForStorage = true;
+
+        leagueNode.child(leagueName).child(getYearString()).child(getMonthString()).setValue(new TeamResultCollection(results.values()));
+
+        populateTable();
 
     }
 
-    @SuppressLint("UseSparseArrays")
+    private String getMonthString() {
+        Calendar calendar = Calendar.getInstance();
+        return Integer.toString(calendar.get(Calendar.MONTH));
+    }
+
+    private String getYearString() {
+        Calendar calendar = Calendar.getInstance();
+        return Integer.toString(calendar.get(Calendar.YEAR));
+    }
+
     private void populateTableFromDatabase() {
         String teamsQuery = "SELECT * FROM " + DatabaseContract.Team.TABLE_NAME + " " +
                 "WHERE " + DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_MONTH + " = ? AND " +
                 DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR + " = ?";
 
         Calendar calendar = Calendar.getInstance();
-        String[] selectionArgs = {String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR))};
+        String[] selectionArgs = {getMonthString(), getYearString()};
 
         SQLiteDatabase db = mMatchDatabase.getReadableDatabase();
         Cursor cursor = db.rawQuery(teamsQuery, selectionArgs);
@@ -345,8 +431,9 @@ public class MainActivity extends AppCompatActivity {
         while (cursor.moveToNext()) {
             String teamName = cursor.getString(cursor.getColumnIndex(DatabaseContract.Team.COLUMN_NAME_NAME));
             if (teamName != null) {
-                TeamResults teamResults = new TeamResults(teamName);
-                results.put(cursor.getInt(cursor.getColumnIndex(DatabaseContract.Team._ID)), teamResults);
+                int teamId = cursor.getInt(cursor.getColumnIndex(DatabaseContract.Team._ID));
+                TeamResult teamResults = new TeamResult(teamName, teamId);
+                results.put(teamId, teamResults);
             }
         }
 
@@ -378,17 +465,17 @@ public class MainActivity extends AppCompatActivity {
         cursor.close();
         db.close();
 
-        populateTable(results);
+
 
     }
 
-    private void populateTable(HashMap<Integer, TeamResults> results) {
+    private void populateTable() {
         ConstraintLayout layout = (ConstraintLayout) findViewById(R.id.constraint_layout);
         TableLayout table = (TableLayout) findViewById(R.id.table);
 
         table.removeAllViews();
 
-        List<TeamResults> sorted = new ArrayList<>(results.values());
+        List<TeamResult> sorted = new ArrayList<>(results.values());
         Collections.sort(sorted);
 
         final TableRow headers = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
@@ -406,7 +493,7 @@ public class MainActivity extends AppCompatActivity {
         ((TextView) headers.findViewById(R.id.table_goals_against)).setTypeface(null, Typeface.BOLD);
         table.addView(headers);
 
-        for (TeamResults result : sorted) {
+        for (TeamResult result : sorted) {
             final TableRow row = (TableRow) getLayoutInflater().inflate(R.layout.table_row, layout);
             ((TextView) row.findViewById(R.id.table_name)).setText(result.getName());
             ((TextView) row.findViewById(R.id.table_wins)).setText(String.valueOf(result.getWins()));
@@ -425,7 +512,7 @@ public class MainActivity extends AppCompatActivity {
                 DatabaseContract.Team.TABLE_NAME + "." + DatabaseContract.Team.COLUMN_NAME_ACTIVE_YEAR + " = ?";
 
         Calendar calendar = Calendar.getInstance();
-        String[] selectionArgs = {String.valueOf(calendar.get(Calendar.MONTH)), String.valueOf(calendar.get(Calendar.YEAR))};
+        String[] selectionArgs = {getMonthString(), getYearString()};
 
         SQLiteDatabase db = mMatchDatabase.getReadableDatabase();
         Cursor cursor = db.rawQuery(teamsQuery, selectionArgs);
